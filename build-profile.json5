@@ -1,0 +1,70 @@
+{
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\hope\\.ohos\\config\\default_xiaozhou_pfOWex1A6AOVBMdBnQMXW5wjiuRhpyxrYOz6x9OG748=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B3878FA8107CA3BA29E2230340D43FCE2CE664ACDD26419C0B092A748D24738FF066262D57E06D0",
+          "profile": "C:\\Users\\hope\\.ohos\\config\\default_xiaozhou_pfOWex1A6AOVBMdBnQMXW5wjiuRhpyxrYOz6x9OG748=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\hope\\.ohos\\config\\default_xiaozhou_pfOWex1A6AOVBMdBnQMXW5wjiuRhpyxrYOz6x9OG748=.p12",
+          "storePassword": "0000001B8ABF16596A6A5E243AFD50D33A995425A3E5B9ED83A6942F185A99088A422DD8AA0127CACA22E0"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "targetSdkVersion": "6.0.2(22)",
+        "compatibleSdkVersion": "6.0.2(22)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      },
+      {
+        "name": "release",
+        "signingConfig": "default",
+        "targetSdkVersion": "6.0.2(22)",
+        "compatibleSdkVersion": "6.0.2(22)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug",
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default",
+            "release"
+          ]
+        }
+      ]
+    }
+  ]
+}
