@@ -4127,11 +4127,13 @@ struct Index {
         }
         const legacyBookmark = '/xiaozhou/bookmarks.json';
         const legacyNote = '/xiaozhou/notes.json';
-        const nextRemotePath = (config.remotePath && config.remotePath.length > 0) ? config.remotePath : '/小舟/bookmarks.json';
+        const bookmarkTarget = '/小舟/书签/bookmarks.json';
+        const nextRemotePath = (config.remotePath && config.remotePath.length > 0) ? config.remotePath : bookmarkTarget;
         const nextNoteRemotePath = (config.noteRemotePath && config.noteRemotePath.length > 0) ? config.noteRemotePath : '/小舟/笔记';
-        const legacyBookmarkNested = '/小舟/书签/bookmarks.json';
-        if (nextRemotePath === legacyBookmark || nextRemotePath === '/小舟/书签' || nextRemotePath === legacyBookmarkNested) {
-          this.syncRemotePath = '/小舟/bookmarks.json';
+        // 旧路径统一迁移到 /小舟/书签/bookmarks.json
+        if (nextRemotePath === legacyBookmark || nextRemotePath === '/小舟/bookmarks.json'
+          || nextRemotePath === '/小舟/书签') {
+          this.syncRemotePath = bookmarkTarget;
         } else {
           this.syncRemotePath = nextRemotePath;
         }
@@ -4171,7 +4173,7 @@ struct Index {
       serverUrl: this.syncServerUrl.trim(),
       username: this.syncUsername.trim(),
       password: this.syncPassword,
-      remotePath: this.syncRemotePath.trim().length > 0 ? this.syncRemotePath.trim() : '/小舟/bookmarks.json',
+      remotePath: this.syncRemotePath.trim().length > 0 ? this.syncRemotePath.trim() : '/小舟/书签/bookmarks.json',
       noteRemotePath: this.syncNoteRemotePath.trim().length > 0 ? this.syncNoteRemotePath.trim() : '/小舟/笔记',
       syncNotesEnabled: true,
       syncImportFullContent: this.autoSyncOnLaunch,
@@ -4214,7 +4216,7 @@ struct Index {
       serverUrl: this.syncServerUrl.trim(),
       username: this.syncUsername.trim(),
       password: this.syncPassword,
-      remotePath: this.syncRemotePath.trim().length > 0 ? this.syncRemotePath.trim() : '/小舟/bookmarks.json',
+      remotePath: this.syncRemotePath.trim().length > 0 ? this.syncRemotePath.trim() : '/小舟/书签/bookmarks.json',
       noteRemotePath: this.syncNoteRemotePath.trim().length > 0 ? this.syncNoteRemotePath.trim() : '/小舟/笔记',
       syncNotesEnabled: true,
       syncImportFullContent: this.syncImportFullContent,
@@ -4230,6 +4232,10 @@ struct Index {
         this.statusText = message;
         this.appendSyncLog(message, result.success);
         this.loadBookmarks();
+        // 同步成功后自动保存配置
+        if (result.success) {
+          this.saveWebDavConfig(true);
+        }
       })
       .catch((err: Object) => {
         const detail = this.errorToMessage(err);
@@ -4266,7 +4272,7 @@ struct Index {
       serverUrl: this.syncServerUrl.trim(),
       username: this.syncUsername.trim(),
       password: this.syncPassword,
-      remotePath: this.syncRemotePath.trim().length > 0 ? this.syncRemotePath.trim() : '/小舟/bookmarks.json',
+      remotePath: this.syncRemotePath.trim().length > 0 ? this.syncRemotePath.trim() : '/小舟/书签/bookmarks.json',
       noteRemotePath: this.syncNoteRemotePath.trim().length > 0 ? this.syncNoteRemotePath.trim() : '/小舟/笔记',
       syncNotesEnabled: true,
       syncImportFullContent: this.syncImportFullContent,
@@ -4281,6 +4287,10 @@ struct Index {
         this.connectionStatusText = result.message;
         this.connectionStatusType = this.resolveConnectionStatusType(result);
         this.appendSyncLog(`连接测试：${result.message}`, result.success);
+        // 连接测试成功后自动保存配置
+        if (result.success) {
+          this.saveWebDavConfig(true);
+        }
       })
       .catch((err: Object) => {
         const detail = this.errorToMessage(err);
