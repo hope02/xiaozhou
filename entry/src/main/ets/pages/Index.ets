@@ -1,10 +1,11 @@
 import { common, Want } from '@kit.AbilityKit';
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction, router, componentSnapshot } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { url } from '@kit.ArkTS';
 import { pasteboard, request } from '@kit.BasicServicesKit';
 import { picker, fileUri } from '@kit.CoreFileKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { image } from '@kit.ImageKit';
 import { Bookmark } from '../model/Bookmark';
 import { BookmarkFolder } from '../model/Bookmark';
 import { BookmarkSnapshot } from '../model/Bookmark';
@@ -158,7 +159,7 @@ struct Index {
   // 多页签相关状态
   @State tabs: Tab[] = [];  // 所有页签列表
   @State activeTabId: string = '';  // 当前活动页签ID
-  @State showTabsPanel: boolean = false;  // 是否显示页签选择面板
+  @State showHomePanel: boolean = false;  // 主页面板（快捷访问+多页签）
   @State closedTabs: Tab[] = [];  // 已关闭页签列表（保留最近10个）
   @State showUndoClose: boolean = false;  // 显示撤销关闭提示
   private sleepTimer: number | null = null;  // 休眠检测定时器
@@ -221,8 +222,8 @@ struct Index {
       this.showDownloadPanel = false;
       return true;
     }
-    if (this.showTabsPanel) {
-      this.showTabsPanel = false;
+    if (this.showHomePanel) {
+      this.showHomePanel = false;
       return true;
     }
     if (this.showMenuPanel) {
@@ -416,6 +417,7 @@ struct Index {
       // 浏览区域容器 - 包含Web组件和弹出面板
       Stack() {
         Web({ src: this.currentUrl, controller: this.webController })
+        .id('webComponent')
         .width('100%')
         .height('100%')
         .backgroundColor(this.getCurrentTab()?.isPrivate ? '#F8F5FC' : '#FFFFFF')
@@ -480,6 +482,11 @@ struct Index {
 
         // 获取网页 favicon
         this.fetchFavicon();
+
+        // 延迟截取网页缩略图（等页面渲染完成）
+        setTimeout(() => {
+          this.captureCurrentTabThumbnail();
+        }, 1000);
       })
       .onErrorReceive((event: OnErrorReceiveEvent) => {
         if (!this.isLoading || this.loadProgress >= 95) {
@@ -542,8 +549,8 @@ struct Index {
             } else if (this.showDownloadPanel) {
               this.showDownloadPanel = false;
               return;
-            } else if (this.showTabsPanel) {
-              this.showTabsPanel = false;
+            } else if (this.showHomePanel) {
+              this.showHomePanel = false;
               return;
             } else {
               // 如果没有打开的面板，尝试网页返回
@@ -921,8 +928,8 @@ struct Index {
           .height('100%')
         }
 
-        // 多页签面板 - 覆盖浏览区域
-        if (this.showTabsPanel) {
+        // 主页/页签面板 - 覆盖浏览区域
+        if (this.showHomePanel) {
           Stack() {
             // 半透明遮罩
             Column()
@@ -930,12 +937,12 @@ struct Index {
               .height('100%')
               .backgroundColor('rgba(0, 0, 0, 0.3)')
               .onClick(() => {
-                this.showTabsPanel = false;
+                this.showHomePanel = false;
               })
 
-            // 页签面板
+            // 主页面板
             Column() {
-              this.TabsPanel()
+              this.HomePanel()
             }
               .width('100%')
               .height('100%')
@@ -1125,16 +1132,6 @@ struct Index {
             this.showHistoryPanel = false;
             this.showSyncPanel = false;
             this.showMenuPanel = false;
-          })
-        }
-
-        GridItem() {
-          this.MenuItem($r('sys.symbol.doc_text'), '笔记', '#007DFF', () => {
-            if (this.navigatingToNotes) {
-              return;
-            }
-            this.navigatingToNotes = true;
-            this.openNoteListPage();
           })
         }
 
@@ -1511,201 +1508,374 @@ struct Index {
   }
 
   @Builder
-  private TabsPanel() {
-    Column({ space: 12 }) {
-      Row({ space: 8 }) {
-        Text(`页签 (${this.tabs.length})`)
-          .fontSize(16)
-          .fontWeight(FontWeight.Medium)
-          .layoutWeight(1)
-
-        if (this.closedTabs.length > 0) {
-          Button('恢复')
-            .fontSize(12)
-            .fontColor('#2F7DFD')
-            .backgroundColor(Color.Transparent)
-            .onClick(() => {
-              this.undoCloseTab();
-              this.showTabsPanel = false;
-            })
-        }
-
-
-      }
-      .width('100%')
-      .padding({ bottom: 8 })
-
-      if (this.tabs.length === 0) {
-        Column({ space: 12 }) {
-          Text('暂无页签')
-            .fontSize(14)
-            .fontColor('#999999')
+  private HomePanel() {
+    Scroll() {
+      Column({ space: 12 }) {
+        // === 快捷访问区（仅无页签时显示） ===
+        if (this.tabs.length === 0) {
+        Column({ space: 10 }) {
+          Text('快捷访问')
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#1A1A1A')
             .width('100%')
-            .textAlign(TextAlign.Center)
-            .padding(20)
 
-          Button('+')
+          if (this.quickAccessItems.length > 0) {
+            Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
+              ForEach(this.quickAccessItems, (item: SuggestionItem) => {
+                Column() {
+                  Column({ space: 4 }) {
+                    Image(item.type === 'bookmark' ?
+                      (this.bookmarks.find(b => b.url === item.url)?.favicon || this.getSiteIcon(item.url)) :
+                      this.getSiteIcon(item.url))
+                      .width(28)
+                      .height(28)
+                      .borderRadius(6)
+                      .alt($r('app.media.app_icon'))
+                    Text(item.title.length > 6 ? item.title.substring(0, 6) + '...' : item.title)
+                      .fontSize(11)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor('#1A1A1A')
+                      .maxLines(1)
+                  }
+                  .width('100%')
+                  .height('100%')
+                  .justifyContent(FlexAlign.Center)
+                }
+                .width('calc(33.33% - 6px)')
+                .height(64)
+                .backgroundColor('#FFFFFF')
+                .borderRadius(10)
+                .shadow({
+                  radius: 2,
+                  color: 'rgba(0, 0, 0, 0.06)',
+                  offsetX: 0,
+                  offsetY: 1
+                })
+                .margin({ bottom: 6 })
+                .onClick(() => {
+                  this.currentUrl = item.url;
+                  this.addressInput = item.url;
+                  this.showHomePanel = false;
+                  this.updateCurrentTab(item.url);
+                  try {
+                    this.webController.loadUrl(item.url);
+                  } catch (_) {}
+                })
+              })
+            }
             .width('100%')
-            .height(44)
-            .fontSize(24)
-            .fontColor('#FFFFFF')
-            .backgroundColor('#2F7DFD')
-            .borderRadius(8)
-            .onClick(() => {
-              this.createNewTab();
-              this.showTabsPanel = false;
-            })
-
-          Text('v1.0.2')
-            .fontSize(12)
-            .fontColor('#CCCCCC')
-            .margin({ top: 8 })
-        }
-      } else {
-        Grid() {
-          ForEach(this.tabs, (tab: Tab) => {
-            GridItem() {
-              Column({ space: 6 }) {
-                Stack({ alignContent: Alignment.Top }) {
+          } else if (this.bookmarks.filter(b => !b.deletedFlag).length > 0) {
+            Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
+              ForEach(
+                this.bookmarks
+                  .filter(b => !b.deletedFlag)
+                  .sort((a, b) => b.updatedAt - a.updatedAt)
+                  .filter((item, index, self) =>
+                    self.findIndex(b => b.url === item.url) === index
+                  )
+                  .slice(0, 6),
+                (bookmark: Bookmark) => {
                   Column() {
-                    if (tab.isSleeping) {
-                      Text('💤')
-                        .fontSize(32)
-                        .width(80)
-                        .height(60)
-                        .backgroundColor('#E8E8E8')
-                        .borderRadius(4)
-                        .textAlign(TextAlign.Center)
-                    } else if (tab.thumbnail) {
-                      Image(tab.thumbnail)
-                        .width(80)
-                        .height(60)
-                        .objectFit(ImageFit.Cover)
-                        .borderRadius(4)
-                    } else {
-                      Image(tab.favicon || this.getSiteIcon(tab.url))
-                        .width(32)
-                        .height(32)
+                    Column({ space: 4 }) {
+                      Image(bookmark.favicon || this.getSiteIcon(bookmark.url))
+                        .width(28)
+                        .height(28)
                         .borderRadius(6)
                         .alt($r('app.media.app_icon'))
-                        .backgroundColor(tab.isPrivate ? '#2D1B4E' : '#E8F0FF')
+                      Text(bookmark.title.length > 6 ? bookmark.title.substring(0, 6) + '...' : bookmark.title)
+                        .fontSize(11)
+                        .fontWeight(FontWeight.Medium)
+                        .fontColor('#1A1A1A')
+                        .maxLines(1)
                     }
+                    .width('100%')
+                    .height('100%')
+                    .justifyContent(FlexAlign.Center)
                   }
-                  .width(80)
-                  .height(60)
-                  .border(tab.isPrivate ? { width: 2, color: '#6B4C9A' } : { width: 0 })
-                  .justifyContent(FlexAlign.Center)
+                  .width('calc(33.33% - 6px)')
+                  .height(64)
+                  .backgroundColor('#FFFFFF')
+                  .borderRadius(10)
+                  .shadow({
+                    radius: 2,
+                    color: 'rgba(0, 0, 0, 0.06)',
+                    offsetX: 0,
+                    offsetY: 1
+                  })
+                  .margin({ bottom: 6 })
+                  .onClick(() => {
+                    this.currentUrl = bookmark.url;
+                    this.addressInput = bookmark.url;
+                    this.showHomePanel = false;
+                    this.updateCurrentTab(bookmark.url);
+                    try {
+                      this.webController.loadUrl(bookmark.url);
+                    } catch (_) {}
+                  })
+                }
+              )
+            }
+            .width('100%')
+          } else {
+            Row({ space: 12 }) {
+              Column() {
+                Column({ space: 6 }) {
+                  Image(this.getSiteIcon('https://www.baidu.com'))
+                    .width(32)
+                    .height(32)
+                    .borderRadius(6)
+                    .alt($r('app.media.app_icon'))
+                  Text('百度')
+                    .fontSize(12)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor('#1A1A1A')
+                }
+                .justifyContent(FlexAlign.Center)
+              }
+              .layoutWeight(1)
+              .height(72)
+              .backgroundColor('#FFFFFF')
+              .borderRadius(10)
+              .shadow({ radius: 2, color: 'rgba(0,0,0,0.06)', offsetX: 0, offsetY: 1 })
+              .onClick(() => {
+                this.currentUrl = 'https://www.baidu.com';
+                this.addressInput = 'https://www.baidu.com';
+                this.showHomePanel = false;
+                this.updateCurrentTab('https://www.baidu.com');
+                try { this.webController.loadUrl('https://www.baidu.com'); } catch (_) {}
+              })
 
-                  Row({ space: 4 }) {
-                    Button({ type: ButtonType.Circle }) {
-                      SymbolGlyph($r('sys.symbol.pin'))
-                        .fontSize(10)
-                        .fontColor([tab.isPinned ? '#FF6600' : '#CCCCCC'])
+              Column() {
+                Column({ space: 6 }) {
+                  Image(this.getSiteIcon('https://www.bing.com'))
+                    .width(32)
+                    .height(32)
+                    .borderRadius(6)
+                    .alt($r('app.media.app_icon'))
+                  Text('Bing')
+                    .fontSize(12)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor('#1A1A1A')
+                }
+                .justifyContent(FlexAlign.Center)
+              }
+              .layoutWeight(1)
+              .height(72)
+              .backgroundColor('#FFFFFF')
+              .borderRadius(10)
+              .shadow({ radius: 2, color: 'rgba(0,0,0,0.06)', offsetX: 0, offsetY: 1 })
+              .onClick(() => {
+                this.currentUrl = 'https://www.bing.com';
+                this.addressInput = 'https://www.bing.com';
+                this.showHomePanel = false;
+                this.updateCurrentTab('https://www.bing.com');
+                try { this.webController.loadUrl('https://www.bing.com'); } catch (_) {}
+              })
+            }
+            .width('100%')
+          }
+        }
+        .width('100%')
+        .padding(12)
+        .backgroundColor('#FFFFFF')
+        .borderRadius(12)
+        } // 快捷访问区结束（仅无页签时显示）
+
+        // === 页签区标题 ===
+        Row() {
+          Text(`页签 (${this.tabs.length})`)
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#333333')
+          Blank()
+          if (this.closedTabs.length > 0) {
+            Text('恢复')
+              .fontSize(12)
+              .fontColor('#2F7DFD')
+              .onClick(() => {
+                this.undoCloseTab();
+                this.showHomePanel = false;
+              })
+          }
+        }
+        .width('100%')
+
+        // === 页签区 ===
+        if (this.tabs.length === 0) {
+          Column() {
+            Text('暂无页签')
+              .fontSize(14)
+              .fontColor('#999999')
+          }
+          .width('100%')
+          .height(60)
+          .justifyContent(FlexAlign.Center)
+        } else {
+          Grid() {
+            ForEach(this.tabs, (tab: Tab) => {
+              GridItem() {
+                Column({ space: 4 }) {
+                  Stack({ alignContent: Alignment.TopEnd }) {
+                    Column() {
+                      if (tab.isSleeping) {
+                        Text('💤')
+                          .fontSize(24)
+                          .width('100%')
+                          .height(48)
+                          .backgroundColor('#E8E8E8')
+                          .borderRadius(4)
+                          .textAlign(TextAlign.Center)
+                      } else if (tab.thumbnail) {
+                        Image(tab.thumbnail)
+                          .width('100%')
+                          .height(48)
+                          .objectFit(ImageFit.Cover)
+                          .borderRadius(4)
+                      } else if (tab.url) {
+                        Row({ space: 4 }) {
+                          Image(tab.favicon || this.getSiteIcon(tab.url))
+                            .width(16)
+                            .height(16)
+                            .borderRadius(3)
+                            .alt($r('app.media.app_icon'))
+                          Text(tab.url.length > 20 ? tab.url.substring(0, 20) + '...' : tab.url)
+                            .fontSize(9)
+                            .fontColor('#999999')
+                            .maxLines(1)
+                            .layoutWeight(1)
+                        }
+                        .width('100%')
+                        .height(48)
+                        .padding({ left: 6, right: 6 })
+                        .backgroundColor(tab.isPrivate ? '#F5F0FA' : '#F0F4F8')
+                        .borderRadius(4)
+                        .alignItems(VerticalAlign.Center)
+                      } else {
+                        Column() {
+                          SymbolGlyph($r('sys.symbol.house'))
+                            .fontSize(20)
+                            .fontColor(['#CCCCCC'])
+                        }
+                        .width('100%')
+                        .height(48)
+                        .backgroundColor('#F5F7FA')
+                        .borderRadius(4)
+                        .justifyContent(FlexAlign.Center)
+                      }
                     }
-                    .width(16)
-                    .height(16)
-                    .backgroundColor(Color.Transparent)
-                    .onClick(() => {
-                      this.togglePinTab(tab.id);
-                    })
+                    .width('100%')
 
+                    // 关闭按钮 - 右上角
                     Button({ type: ButtonType.Circle }) {
                       SymbolGlyph($r('sys.symbol.xmark'))
-                        .fontSize(8)
+                        .fontSize(10)
                         .fontColor(['#FFFFFF'])
                     }
-                    .width(16)
-                    .height(16)
-                    .backgroundColor('#666666')
+                    .width(20)
+                    .height(20)
+                    .backgroundColor('rgba(0,0,0,0.5)')
                     .onClick(() => {
                       this.closeTab(tab.id);
                     })
-                  }
-                  .width(80)
-                  .justifyContent(FlexAlign.SpaceBetween)
-                  .position({ y: 0 })
 
-                  if (tab.isPrivate) {
-                    SymbolGlyph($r('sys.symbol.lock'))
-                      .fontSize(10)
-                      .fontColor(['#666666'])
-                      .position({ x: 65, y: 45 })
+                    // 隐私标记
+                    if (tab.isPrivate) {
+                      SymbolGlyph($r('sys.symbol.lock'))
+                        .fontSize(9)
+                        .fontColor(['#6B4C9A'])
+                        .margin({ top: 30, right: 4 })
+                    }
                   }
+                  .width('100%')
+                  .height(48)
+
+                  Row({ space: 4 }) {
+                    if (tab.isPinned) {
+                      SymbolGlyph($r('sys.symbol.pin'))
+                        .fontSize(10)
+                        .fontColor(['#FF6600'])
+                    }
+                    Text(tab.title.length > 10 ? tab.title.substring(0, 10) + '...' : (tab.title || '主页'))
+                      .fontSize(11)
+                      .fontColor('#333333')
+                      .maxLines(1)
+                      .layoutWeight(1)
+                  }
+                  .width('100%')
+                  .padding({ left: 2, right: 2 })
                 }
-                .width(80)
-                .height(60)
-
-                Text(tab.title.length > 8 ? tab.title.substring(0, 8) + '...' : (tab.title || '新页签'))
-                  .fontSize(12)
-                  .fontColor('#333333')
-                  .maxLines(1)
-                  .textAlign(TextAlign.Center)
-                  .width(80)
+                .width('100%')
+                .padding(6)
+                .backgroundColor(tab.isPrivate ? (tab.id === this.activeTabId ? '#E8E0F0' : '#F5F0FA') : (tab.id === this.activeTabId ? '#E8F0FF' : '#FFFFFF'))
+                .borderRadius(8)
+                .border(tab.id === this.activeTabId ? { width: 2, color: tab.isPrivate ? '#6B4C9A' : '#2F7DFD' } : (tab.isPrivate ? { width: 1, color: '#6B4C9A' } : {}))
+                .onClick(() => {
+                  this.switchToTab(tab.id);
+                })
               }
-              .width('100%')
-              .padding(8)
-              .backgroundColor(tab.isPrivate ? (tab.id === this.activeTabId ? '#E8E0F0' : '#F5F0FA') : (tab.id === this.activeTabId ? '#E8F0FF' : '#FFFFFF'))
-              .borderRadius(8)
-              .border(tab.id === this.activeTabId ? { width: 2, color: tab.isPrivate ? '#6B4C9A' : '#2F7DFD' } : (tab.isPrivate ? { width: 1, color: '#6B4C9A' } : {}))
-              .onClick(() => {
-                this.switchToTab(tab.id);
-              })
-            }
-          }, (tab: Tab) => tab.id)
+            }, (tab: Tab) => tab.id)
+          }
+          .columnsTemplate('1fr 1fr')
+          .columnsGap(8)
+          .rowsGap(8)
+          .width('100%')
         }
-        .columnsTemplate('1fr 1fr')
-        .columnsGap(8)
-        .rowsGap(8)
-        .width('100%')
-        .layoutWeight(1)
-        .scrollBar(BarState.Auto)
-      }
 
-      Row({ space: 8 }) {
-        Button('+ 新建')
+        // === 操作按钮 ===
+        Row({ space: 8 }) {
+          Button({ type: ButtonType.Normal }) {
+            Row({ space: 4 }) {
+              SymbolGlyph($r('sys.symbol.plus')).fontSize(12).fontColor(['#FFFFFF'])
+              Text('新建').fontSize(12).fontColor('#FFFFFF')
+            }
+          }
           .layoutWeight(1)
-          .height(40)
-          .fontSize(14)
-          .fontColor('#FFFFFF')
+          .height(36)
           .backgroundColor('#2F7DFD')
           .borderRadius(8)
           .onClick(() => {
             this.createNewTab();
-            this.showTabsPanel = false;
+            this.showHomePanel = false;
           })
 
-        Button('🔒 隐私')
+          Button({ type: ButtonType.Normal }) {
+            Row({ space: 4 }) {
+              SymbolGlyph($r('sys.symbol.lock')).fontSize(12).fontColor(['#6B4C9A'])
+              Text('隐私').fontSize(12).fontColor('#6B4C9A')
+            }
+          }
           .layoutWeight(1)
-          .height(40)
-          .fontSize(14)
-          .fontColor('#6B4C9A')
+          .height(36)
           .backgroundColor('#F5F0FA')
-          .border({ width: 2, color: '#6B4C9A' })
+          .border({ width: 1, color: '#6B4C9A' })
           .borderRadius(8)
           .onClick(() => {
             this.createPrivateTab();
-            this.showTabsPanel = false;
+            this.showHomePanel = false;
           })
 
-        if (this.tabs.length > 1) {
-          Button('全部关闭')
+          if (this.tabs.length > 1) {
+            Button({ type: ButtonType.Normal }) {
+              Text('全部关闭').fontSize(12).fontColor('#FF4444')
+            }
             .layoutWeight(1)
-            .height(40)
-            .fontSize(14)
-            .fontColor('#FF4444')
+            .height(36)
             .backgroundColor('#FFFFFF')
             .border({ width: 1, color: '#FF4444' })
             .borderRadius(8)
             .onClick(() => {
               this.closeAllTabs();
             })
+          }
         }
+        .width('100%')
       }
       .width('100%')
     }
     .width('100%')
     .height('100%')
-    .padding(16)
+    .padding({ left: 16, right: 16, top: 8, bottom: 16 })
     .backgroundColor('#F7F8FA')
   }
 
@@ -1728,6 +1898,10 @@ struct Index {
     const activeTab = this.tabs.find((tab) => tab.id === this.activeTabId);
 
     for (const tab of this.tabs) {
+      // 清理缩略图缓存文件
+      if (tab.thumbnail) {
+        try { fs.unlinkSync(tab.thumbnail); } catch (_) {}
+      }
       if (!tab.isPinned && !tab.isPrivate) {
         const index = this.closedTabs.findIndex((t) => t.id === tab.id);
         if (index === -1 && this.closedTabs.length < this.MAX_CLOSED_TABS) {
@@ -1744,7 +1918,7 @@ struct Index {
       this.switchToTab(this.tabs[0].id);
     }
 
-    this.showTabsPanel = false;
+    this.showHomePanel = false;
     this.showUndoClose = true;
     setTimeout(() => {
       this.showUndoClose = false;
@@ -1772,7 +1946,7 @@ struct Index {
       })
       .onClick(() => {
         this.showMenuPanel = false;
-        this.showTabsPanel = false;
+        this.showHomePanel = false;
         this.goBackward();
       })
 
@@ -1794,15 +1968,51 @@ struct Index {
       })
       .onClick(() => {
         this.showMenuPanel = false;
-        this.showTabsPanel = false;
+        this.showHomePanel = false;
         this.goForward();
       })
 
-      // 主页按钮（置空浏览器）
+      // 主页/页签按钮
       Button({ type: ButtonType.Normal }) {
-        SymbolGlyph($r('sys.symbol.house'))
-          .fontSize(20)
-          .fontColor(['#1A1A1A'])
+        Stack({ alignContent: Alignment.BottomEnd }) {
+          SymbolGlyph($r('sys.symbol.house'))
+            .fontSize(20)
+            .fontColor([this.showHomePanel ? '#007DFF' : '#1A1A1A'])
+          if (this.tabs.length > 1) {
+            Text(`${this.tabs.length}`)
+              .fontSize(8)
+              .fontColor('#FFFFFF')
+              .fontWeight(FontWeight.Medium)
+              .backgroundColor('#FF6600')
+              .borderRadius(8)
+              .padding({ left: 3, right: 3, top: 0, bottom: 0 })
+              .margin({ left: -4, top: -4 })
+          }
+        }
+      }
+      .layoutWeight(1)
+      .height(40)
+      .backgroundColor(this.showHomePanel ? '#E8F0FF' : '#FFFFFF')
+      .borderRadius(0)
+      .shadow({
+        radius: 2,
+        color: 'rgba(0, 0, 0, 0.08)',
+        offsetX: 0,
+        offsetY: 1
+      })
+      .onClick(() => {
+        this.showHomePanel = !this.showHomePanel;
+        this.showMenuPanel = false;
+        this.showBookmarks = false;
+        this.showHistoryPanel = false;
+        this.showSyncPanel = false;
+      })
+
+      // 笔记按钮
+      Button({ type: ButtonType.Normal }) {
+        SymbolGlyph($r('sys.symbol.doc_text'))
+          .fontSize(18)
+          .fontColor(['#007DFF'])
       }
       .layoutWeight(1)
       .height(40)
@@ -1816,45 +2026,12 @@ struct Index {
       })
       .onClick(() => {
         this.showMenuPanel = false;
-        this.showTabsPanel = false;
-        // 主页功能：置空浏览器
-        this.currentUrl = '';
-        this.addressInput = '';
-        this.isLoading = false;
-        this.loadProgress = 0;
-        this.statusText = '';
-        // 清空当前页签的URL
-        if (this.activeTabId) {
-          const currentTab = this.tabs.find((tab) => tab.id === this.activeTabId);
-          if (currentTab) {
-            currentTab.url = '';
-            currentTab.title = '新页签';
-          }
+        this.showHomePanel = false;
+        if (this.navigatingToNotes) {
+          return;
         }
-      })
-
-      // 页签按钮
-      Button({ type: ButtonType.Normal }) {
-        SymbolGlyph($r('sys.symbol.ellipsis_circle'))
-          .fontSize(20)
-          .fontColor(['#1A1A1A'])
-      }
-      .layoutWeight(1)
-      .height(40)
-      .backgroundColor(this.tabs.length > 1 ? '#E8F4FF' : '#FFFFFF')
-      .borderRadius(0)
-      .shadow({
-        radius: 2,
-        color: 'rgba(0, 0, 0, 0.08)',
-        offsetX: 0,
-        offsetY: 1
-      })
-      .onClick(() => {
-        this.showTabsPanel = !this.showTabsPanel;
-        this.showMenuPanel = false;
-        this.showBookmarks = false;
-        this.showHistoryPanel = false;
-        this.showSyncPanel = false;
+        this.navigatingToNotes = true;
+        this.openNoteListPage();
       })
 
       // 菜单按钮
@@ -1875,7 +2052,7 @@ struct Index {
       })
       .onClick(() => {
         this.showMenuPanel = !this.showMenuPanel;
-        this.showTabsPanel = false;
+        this.showHomePanel = false;
         this.showBookmarks = false;
         this.showHistoryPanel = false;
         this.showSyncPanel = false;
@@ -1904,7 +2081,7 @@ struct Index {
     this.showHistoryPanel = false;
     this.showSyncPanel = false;
     this.showDownloadPanel = false;
-    this.showTabsPanel = false;
+    this.showHomePanel = false;
 
     // 更新当前页签的URL
     this.updateCurrentTab(target);
@@ -2135,11 +2312,13 @@ struct Index {
   // 切换到指定页签
   private switchToTab(tabId: string): void {
     if (this.activeTabId === tabId) {
-      this.showTabsPanel = false;
+      this.showHomePanel = false;
       return;
     }
 
+    // 切换前截取当前页签缩略图
     if (this.activeTabId) {
+      this.captureCurrentTabThumbnail();
       const currentTab = this.tabs.find((tab) => tab.id === this.activeTabId);
       if (currentTab && this.currentUrl) {
         currentTab.url = this.currentUrl;
@@ -2172,7 +2351,7 @@ struct Index {
       }
     }
 
-    this.showTabsPanel = false;
+    this.showHomePanel = false;
     this.resetSleepTimer();
   }
 
@@ -2185,6 +2364,11 @@ struct Index {
 
     const wasActive = this.activeTabId === tabId;
     const closedTab = this.tabs[index];
+
+    // 清理缩略图缓存文件
+    if (closedTab.thumbnail) {
+      try { fs.unlinkSync(closedTab.thumbnail); } catch (_) {}
+    }
 
     if (!closedTab.isPrivate && this.closedTabs.length < this.MAX_CLOSED_TABS) {
       this.closedTabs.unshift(closedTab);
@@ -2216,7 +2400,7 @@ struct Index {
     }
 
     if (this.tabs.length <= 1) {
-      this.showTabsPanel = false;
+      this.showHomePanel = false;
     }
 
     this.showUndoClose = true;
@@ -4464,6 +4648,47 @@ struct Index {
             .catch(() => {});
         } catch (_) {}
       }
+    }
+  }
+
+  // 截取当前页签的网页缩略图
+  private captureCurrentTabThumbnail(): void {
+    if (!this.activeTabId) {
+      return;
+    }
+    const currentTab = this.tabs.find((tab) => tab.id === this.activeTabId);
+    if (!currentTab || !currentTab.url || currentTab.url === 'about:blank') {
+      return;
+    }
+    try {
+      componentSnapshot.get('webComponent').then((pixelMap: image.PixelMap) => {
+        // 缩放为缩略图尺寸
+        pixelMap.scale(0.3, 0.3);
+        const imagePackerApi = image.createImagePacker();
+        const packOpts: image.PackingOption = {
+          format: 'image/jpeg',
+          quality: 60
+        };
+        imagePackerApi.packToData(pixelMap, packOpts).then((arrayBuffer: ArrayBuffer) => {
+          const context = getContext(this) as common.UIAbilityContext;
+          const cacheDir = context.cacheDir;
+          const fileName = `tab_${currentTab.id}.jpg`;
+          const filePath = `${cacheDir}/${fileName}`;
+          const file = fs.openSync(filePath, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+          fs.writeSync(file.fd, arrayBuffer);
+          fs.closeSync(file.fd);
+          currentTab.thumbnail = filePath;
+          imagePackerApi.release();
+          pixelMap.release();
+        }).catch(() => {
+          try { imagePackerApi.release(); } catch (_) {}
+          try { pixelMap.release(); } catch (_) {}
+        });
+      }).catch(() => {
+        // componentSnapshot.get 可能因组件不可见等原因失败，静默忽略
+      });
+    } catch (_) {
+      // 截图异常静默忽略
     }
   }
 
