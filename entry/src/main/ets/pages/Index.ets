@@ -9,18 +9,18 @@ import { Bookmark } from '../model/Bookmark';
 import { BookmarkFolder } from '../model/Bookmark';
 import { BookmarkSnapshot } from '../model/Bookmark';
 import { HistoryRecord } from '../model/HistoryRecord';
-import { SyncLog } from '../model/SyncLog';
-import { WebDavConfig } from '../model/WebDavConfig';
 import { DownloadRecord } from '../model/DownloadRecord';
 import { BookmarkRepository } from '../repository/BookmarkRepository';
 import { HistoryRepository } from '../repository/HistoryRepository';
 import { PreferencesBookmarkRepository } from '../repository/PreferencesBookmarkRepository';
 import { PreferencesHistoryRepository } from '../repository/PreferencesHistoryRepository';
+import { PreferencesDownloadRecordRepository } from '../repository/PreferencesDownloadRecordRepository';
+import { SyncLog } from '../model/SyncLog';
+import { WebDavConfig } from '../model/WebDavConfig';
 import { WebDavConfigRepository } from '../repository/WebDavConfigRepository';
 import { PreferencesWebDavConfigRepository } from '../repository/PreferencesWebDavConfigRepository';
 import { SyncLogRepository } from '../repository/SyncLogRepository';
 import { PreferencesSyncLogRepository } from '../repository/PreferencesSyncLogRepository';
-import { PreferencesDownloadRecordRepository } from '../repository/PreferencesDownloadRecordRepository';
 import { ConnectionTestResult, SyncExecutionResult, WebDavSyncService } from '../service/WebDavSyncService';
 import { Note } from '../model/Note';
 import { NOTE_FOLDER_IDS, PreferencesNoteRepository } from '../repository/PreferencesNoteRepository';
@@ -75,10 +75,10 @@ struct Index {
   private addressInputController: TextInputController = new TextInputController();
   private bookmarkRepository: BookmarkRepository | null = null;
   private historyRepository: HistoryRepository | null = null;
+  private downloadRecordRepository: PreferencesDownloadRecordRepository | null = null;
   private webDavConfigRepository: WebDavConfigRepository | null = null;
   private syncLogRepository: SyncLogRepository | null = null;
   private webDavSyncService: WebDavSyncService | null = null;
-  private downloadRecordRepository: PreferencesDownloadRecordRepository | null = null;
 
   @State addressInput: string = DEFAULT_URL;
   @State currentUrl: string = DEFAULT_URL;
@@ -105,22 +105,6 @@ struct Index {
   @State showHistoryPanel: boolean = false;
   @State historyKeyword: string = '';
   @State historyRecords: HistoryRecord[] = [];
-  @State showSyncPanel: boolean = false;
-  @State syncServerUrl: string = 'https://dav.jianguoyun.com/dav/';
-  @State syncUsername: string = '';
-  @State syncPassword: string = '';
-  @State syncDraftTouched: boolean = false;
-  @State syncRemotePath: string = '/小舟/书签/bookmarks.json';
-  @State autoSyncOnLaunch: boolean = false;
-  @State autoSyncOnChange: boolean = false;
-  @State syncImportFullContent: boolean = false;
-  @State syncNoteRemotePath: string = '/小舟/笔记';
-  @State connectionStatusText: string = '未测试';
-  @State connectionStatusType: string = 'neutral';
-  @State syncBusy: boolean = false;
-  @State syncBusyText: string = '';
-  @State syncLogs: SyncLog[] = [];
-  @State lastSyncErrorDetail: string = '';
   @State showAddressBar: boolean = true;
   @State addressBarHeight: number = 56;
   @State addressBarVisible: boolean = true;
@@ -140,6 +124,22 @@ struct Index {
   @State readingBgMode: string = 'paper';
   @State readingLineHeight: number = 1.8;
   @State preferDesktopSite: boolean = false;
+  @State showSyncPanel: boolean = false;
+  @State syncServerUrl: string = 'https://dav.jianguoyun.com/dav/';
+  @State syncUsername: string = '';
+  @State syncPassword: string = '';
+  @State syncDraftTouched: boolean = false;
+  @State syncRemotePath: string = '/小舟/bookmarks.json';
+  @State autoSyncOnLaunch: boolean = false;
+  @State autoSyncOnChange: boolean = false;
+  @State syncImportFullContent: boolean = false;
+  @State syncNoteRemotePath: string = '/小舟/笔记';
+  @State connectionStatusText: string = '未测试';
+  @State connectionStatusType: string = 'neutral';
+  @State syncBusy: boolean = false;
+  @State syncBusyText: string = '';
+  @State syncLogs: SyncLog[] = [];
+  @State lastSyncErrorDetail: string = '';
   private noteRepo: PreferencesNoteRepository | null = null;
   private navigatingToNotes: boolean = false;
   private touchStartY: number = 0;
@@ -209,12 +209,12 @@ struct Index {
       this.showBookmarks = false;
       return true;
     }
-    if (this.showSyncPanel) {
-      this.showSyncPanel = false;
-      return true;
-    }
     if (this.showHistoryPanel) {
       this.showHistoryPanel = false;
+      return true;
+    }
+    if (this.showSyncPanel) {
+      this.showSyncPanel = false;
       return true;
     }
     if (this.showDownloadPanel) {
@@ -533,11 +533,11 @@ struct Index {
             } else if (this.showBookmarks) {
               this.showBookmarks = false;
               return;
-            } else if (this.showSyncPanel) {
-              this.showSyncPanel = false;
-              return;
             } else if (this.showHistoryPanel) {
               this.showHistoryPanel = false;
+              return;
+            } else if (this.showSyncPanel) {
+              this.showSyncPanel = false;
               return;
             } else if (this.showDownloadPanel) {
               this.showDownloadPanel = false;
@@ -854,7 +854,6 @@ struct Index {
         // 同步面板 - 覆盖浏览区域
         if (this.showSyncPanel) {
         Stack() {
-          // 半透明遮罩
           Column()
             .width('100%')
             .height('100%')
@@ -863,7 +862,6 @@ struct Index {
               this.showSyncPanel = false;
             })
 
-          // 同步面板
           Column() {
             this.SyncPanel()
           }
@@ -2855,160 +2853,159 @@ struct Index {
   private SyncPanel() {
     Column({ space: 12 }) {
       Column({ space: 10 }) {
-          Text('WebDAV 同步')
-            .fontSize(16)
-            .fontWeight(FontWeight.Medium)
-            .fontColor('#1A1A1A')
+        Text('WebDAV 同步')
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#1A1A1A')
+          .width('100%')
+          .textAlign(TextAlign.Center)
+
+        if (this.syncBusy) {
+          Text(this.syncBusyText.length > 0 ? this.syncBusyText : '同步任务进行中...')
+            .fontSize(12)
+            .fontColor('#1E5AA7')
             .width('100%')
             .textAlign(TextAlign.Center)
+        }
 
-          Text('数据目录固定为 /小舟：书签在「书签」文件夹，笔记在「笔记」文件夹（测试连接会尝试创建 /小舟）')
-            .fontSize(11)
-            .fontColor('#888888')
-            .width('100%')
-
-          if (this.syncBusy) {
-            Text(this.syncBusyText.length > 0 ? this.syncBusyText : '同步任务进行中...')
-              .fontSize(12)
-              .fontColor('#1E5AA7')
-              .width('100%')
-              .textAlign(TextAlign.Center)
-          }
-
-          Row({ space: 8 }) {
-            Text('服务器')
-              .fontSize(13)
-              .fontColor('#666666')
-              .width(54)
-            TextInput({ text: this.syncServerUrl, placeholder: 'https://...' })
-              .layoutWeight(1)
-              .height(44)
-              .borderRadius(8)
-              .padding({ left: 12, right: 12 })
-              .backgroundColor('#F2F3F5')
-              .onChange((value: string) => {
-                this.syncServerUrl = value;
-                this.syncDraftTouched = true;
-              })
-          }
+        Text(`连接状态：${this.connectionStatusText}`)
+          .fontSize(11)
+          .fontColor(this.connectionStatusColor())
           .width('100%')
 
-          Row({ space: 8 }) {
-            Text('用户名')
-              .fontSize(13)
-              .fontColor('#666666')
-              .width(54)
-            TextInput({ text: this.syncUsername, placeholder: '请输入用户名' })
-              .layoutWeight(1)
-              .height(44)
-              .borderRadius(8)
-              .padding({ left: 12, right: 12 })
-              .backgroundColor('#F2F3F5')
-              .onChange((value: string) => {
-                this.syncUsername = value;
-                this.syncDraftTouched = true;
-              })
-          }
+        Row({ space: 8 }) {
+          Text('服务器')
+            .fontSize(13)
+            .fontColor('#666666')
+            .width(54)
+          TextInput({ text: this.syncServerUrl, placeholder: 'https://...' })
+            .layoutWeight(1)
+            .height(44)
+            .border({ width: 1, color: '#E8E8E8' })
+            .borderRadius(8)
+            .padding({ left: 12, right: 12 })
+            .onChange((value: string) => {
+              this.syncServerUrl = value;
+              this.syncDraftTouched = true;
+            })
+        }
+        .width('100%')
+
+        Row({ space: 8 }) {
+          Text('用户名')
+            .fontSize(13)
+            .fontColor('#666666')
+            .width(54)
+          TextInput({ text: this.syncUsername, placeholder: '请输入用户名' })
+            .layoutWeight(1)
+            .height(44)
+            .border({ width: 1, color: '#E8E8E8' })
+            .borderRadius(8)
+            .padding({ left: 12, right: 12 })
+            .onChange((value: string) => {
+              this.syncUsername = value;
+              this.syncDraftTouched = true;
+            })
+        }
+        .width('100%')
+
+        Row({ space: 8 }) {
+          Text('密码')
+            .fontSize(13)
+            .fontColor('#666666')
+            .width(54)
+          TextInput({ text: this.syncPassword, placeholder: '请输入密码' })
+            .layoutWeight(1)
+            .height(44)
+            .type(InputType.Password)
+            .border({ width: 1, color: '#E8E8E8' })
+            .borderRadius(8)
+            .padding({ left: 12, right: 12 })
+            .onChange((value: string) => {
+              this.syncPassword = value;
+              this.syncDraftTouched = true;
+            })
+        }
+        .width('100%')
+
+        Divider()
+          .height(1)
+          .color('#E8E8E8')
           .width('100%')
 
-          Row({ space: 8 }) {
-            Text('密码')
-              .fontSize(13)
-              .fontColor('#666666')
-              .width(54)
-            TextInput({ text: this.syncPassword, placeholder: '请输入密码' })
-              .layoutWeight(1)
-              .height(44)
-              .type(InputType.Password)
-              .borderRadius(8)
-              .padding({ left: 12, right: 12 })
-              .backgroundColor('#F2F3F5')
-              .onChange((value: string) => {
-                this.syncPassword = value;
-                this.syncDraftTouched = true;
-              })
-          }
-          .width('100%')
+        Row({ space: 8 }) {
+          Button(this.autoSyncOnLaunch ? '启动同步 开' : '启动同步 关')
+            .layoutWeight(1)
+            .height(34)
+            .fontSize(12)
+            .fontColor(this.autoSyncOnLaunch ? '#2F7DFD' : '#666666')
+            .backgroundColor(this.autoSyncOnLaunch ? '#E8F0FF' : '#F0F0F0')
+            .borderRadius(6)
+            .enabled(!this.syncBusy)
+            .onClick(() => {
+              this.autoSyncOnLaunch = !this.autoSyncOnLaunch;
+              this.syncImportFullContent = this.autoSyncOnLaunch;
+              this.saveWebDavConfig(true);
+            })
 
-          Divider()
-            .height(1)
-            .color('#E8E8E8')
-            .width('100%')
+          Button(this.autoSyncOnChange ? '变更同步 开' : '变更同步 关')
+            .layoutWeight(1)
+            .height(34)
+            .fontSize(12)
+            .fontColor(this.autoSyncOnChange ? '#2F7DFD' : '#666666')
+            .backgroundColor(this.autoSyncOnChange ? '#E8F0FF' : '#F0F0F0')
+            .borderRadius(6)
+            .enabled(!this.syncBusy)
+            .onClick(() => {
+              this.autoSyncOnChange = !this.autoSyncOnChange;
+              this.saveWebDavConfig(true);
+            })
+        }
+        .width('100%')
 
-          Row({ space: 8 }) {
-            Button(this.autoSyncOnLaunch ? '启动同步 开' : '启动同步 关')
-              .layoutWeight(1)
-              .height(34)
-              .fontSize(12)
-              .fontColor(this.autoSyncOnLaunch ? '#007DFF' : '#666666')
-              .backgroundColor(this.autoSyncOnLaunch ? '#E8F4FF' : '#F2F3F5')
-              .borderRadius(8)
-              .enabled(!this.syncBusy)
-              .onClick(() => {
-                this.autoSyncOnLaunch = !this.autoSyncOnLaunch;
-                // "同步全文" 功能并入 "启动同步"
-                this.syncImportFullContent = this.autoSyncOnLaunch;
-                this.saveWebDavConfig(true);
-              })
+        Row({ space: 8 }) {
+          Button('保存配置')
+            .layoutWeight(1)
+            .height(36)
+            .fontSize(13)
+            .fontColor('#FFFFFF')
+            .backgroundColor('#2F7DFD')
+            .borderRadius(6)
+            .enabled(!this.syncBusy)
+            .onClick(() => {
+              this.saveWebDavConfig();
+            })
 
-            Button(this.autoSyncOnChange ? '变更同步 开' : '变更同步 关')
-              .layoutWeight(1)
-              .height(34)
-              .fontSize(12)
-              .fontColor(this.autoSyncOnChange ? '#007DFF' : '#666666')
-              .backgroundColor(this.autoSyncOnChange ? '#E8F4FF' : '#F2F3F5')
-              .borderRadius(8)
-              .enabled(!this.syncBusy)
-              .onClick(() => {
-                this.autoSyncOnChange = !this.autoSyncOnChange;
-                this.saveWebDavConfig(true);
-              })
-          }
-          .width('100%')
+          Button('测试连接')
+            .layoutWeight(1)
+            .height(36)
+            .fontSize(13)
+            .fontColor('#FFFFFF')
+            .backgroundColor('#1E5AA7')
+            .borderRadius(6)
+            .enabled(!this.syncBusy)
+            .onClick(() => {
+              this.testWebDavConnection();
+            })
+        }
+        .width('100%')
 
-          Row({ space: 8 }) {
-            Button('保存配置')
-              .layoutWeight(1)
-              .height(36)
-              .fontSize(13)
-              .fontColor('#FFFFFF')
-              .backgroundColor('#007DFF')
-              .borderRadius(8)
-              .enabled(!this.syncBusy)
-              .onClick(() => {
-                this.saveWebDavConfig();
-              })
+        Row({ space: 8 }) {
+          Button('立即同步')
+            .layoutWeight(2)
+            .height(36)
+            .fontSize(13)
+            .fontColor('#FFFFFF')
+            .backgroundColor('#2F7DFD')
+            .borderRadius(6)
+            .enabled(!this.syncBusy)
+            .onClick(() => {
+              this.manualSyncAll();
+            })
+        }
+        .width('100%')
 
-            Button('测试连接')
-              .layoutWeight(1)
-              .height(36)
-              .fontSize(13)
-              .fontColor('#007DFF')
-              .backgroundColor('#E8F4FF')
-              .borderRadius(8)
-              .enabled(!this.syncBusy)
-              .onClick(() => {
-                this.testWebDavConnection();
-              })
-          }
-          .width('100%')
-
-          Row({ space: 8 }) {
-            Button('立即同步')
-              .layoutWeight(2)
-              .height(36)
-              .fontSize(13)
-              .fontColor('#FFFFFF')
-              .backgroundColor('#007DFF')
-              .borderRadius(8)
-              .enabled(!this.syncBusy)
-              .onClick(() => {
-                this.manualSyncAll();
-              })
-          }
-          .width('100%')
-
-          this.SyncLogPanel()
+        this.SyncLogPanel()
       }
       .width('100%')
       .layoutWeight(1)
@@ -3657,7 +3654,6 @@ struct Index {
         this.statusText = '已加入书签';
         this.showToast('收藏成功');
         this.loadFolders();
-        // 变更时自动同步
         if (this.autoSyncOnChange) {
           this.manualSyncAll(true);
         }
@@ -3730,7 +3726,6 @@ struct Index {
       .then(() => {
         this.statusText = '书签已更新';
         this.loadFolders();
-        // 变更时自动同步
         if (this.autoSyncOnChange) {
           this.manualSyncAll(true);
         }
@@ -3766,7 +3761,6 @@ struct Index {
     this.bookmarkRepository.markBookmarkDeleted(bookmarkId)
       .then(() => {
         this.statusText = '书签已删除';
-        // 变更时自动同步
         if (this.autoSyncOnChange) {
           this.manualSyncAll(true);
         }
@@ -4068,7 +4062,14 @@ struct Index {
       const uiContext = getContext(this) as common.UIAbilityContext;
       this.bookmarkRepository = new PreferencesBookmarkRepository(uiContext);
       this.webDavSyncService = new WebDavSyncService(this.bookmarkRepository);
-      if (this.webDavSyncService && this.noteRepo) {
+      if (!this.noteRepo) {
+        try {
+          this.noteRepo = new PreferencesNoteRepository(uiContext);
+        } catch (e) {
+          console.error('Failed to initialize noteRepo:', e);
+        }
+      }
+      if (this.webDavSyncService !== null && this.noteRepo !== null) {
         this.webDavSyncService.setNoteRepository(this.noteRepo);
       }
       this.loadFolders();
@@ -4119,16 +4120,24 @@ struct Index {
     }
     this.webDavConfigRepository.getConfig()
       .then((config: WebDavConfig) => {
-        // Avoid overwriting user's in-progress edits when async config loads.
         if (!this.syncDraftTouched) {
           this.syncServerUrl = config.serverUrl;
           this.syncUsername = config.username;
           this.syncPassword = config.password;
         }
-        this.syncRemotePath = '/小舟/书签/bookmarks.json';
-        this.syncNoteRemotePath = '/小舟/笔记';
+        const legacyBookmark = '/xiaozhou/bookmarks.json';
+        const legacyNote = '/xiaozhou/notes.json';
+        const nextRemotePath = (config.remotePath && config.remotePath.length > 0) ? config.remotePath : '/小舟/bookmarks.json';
+        const nextNoteRemotePath = (config.noteRemotePath && config.noteRemotePath.length > 0) ? config.noteRemotePath : '/小舟/笔记';
+        const legacyBookmarkNested = '/小舟/书签/bookmarks.json';
+        if (nextRemotePath === legacyBookmark || nextRemotePath === '/小舟/书签' || nextRemotePath === legacyBookmarkNested) {
+          this.syncRemotePath = '/小舟/bookmarks.json';
+        } else {
+          this.syncRemotePath = nextRemotePath;
+        }
+        this.syncNoteRemotePath = nextNoteRemotePath === legacyNote ? '/小舟/笔记' : nextNoteRemotePath;
         this.autoSyncOnLaunch = config.autoSyncOnLaunch;
-        this.syncImportFullContent = config.syncImportFullContent ?? false;
+        this.syncImportFullContent = this.autoSyncOnLaunch;
         this.autoSyncOnChange = config.autoSyncOnChange || false;
         if (this.autoSyncOnLaunch) {
           this.appendSyncLog('检测到启动自动同步配置，开始执行同步', true);
@@ -4162,10 +4171,10 @@ struct Index {
       serverUrl: this.syncServerUrl.trim(),
       username: this.syncUsername.trim(),
       password: this.syncPassword,
-      remotePath: '/小舟/书签/bookmarks.json',
-      noteRemotePath: '/小舟/笔记',
+      remotePath: this.syncRemotePath.trim().length > 0 ? this.syncRemotePath.trim() : '/小舟/bookmarks.json',
+      noteRemotePath: this.syncNoteRemotePath.trim().length > 0 ? this.syncNoteRemotePath.trim() : '/小舟/笔记',
       syncNotesEnabled: true,
-      syncImportFullContent: this.syncImportFullContent ?? false,
+      syncImportFullContent: this.autoSyncOnLaunch,
       autoSyncOnLaunch: this.autoSyncOnLaunch,
       autoSyncOnChange: this.autoSyncOnChange
     };
@@ -4205,8 +4214,8 @@ struct Index {
       serverUrl: this.syncServerUrl.trim(),
       username: this.syncUsername.trim(),
       password: this.syncPassword,
-      remotePath: '/小舟/书签/bookmarks.json',
-      noteRemotePath: '/小舟/笔记',
+      remotePath: this.syncRemotePath.trim().length > 0 ? this.syncRemotePath.trim() : '/小舟/bookmarks.json',
+      noteRemotePath: this.syncNoteRemotePath.trim().length > 0 ? this.syncNoteRemotePath.trim() : '/小舟/笔记',
       syncNotesEnabled: true,
       syncImportFullContent: this.syncImportFullContent,
       autoSyncOnLaunch: this.autoSyncOnLaunch,
@@ -4257,8 +4266,8 @@ struct Index {
       serverUrl: this.syncServerUrl.trim(),
       username: this.syncUsername.trim(),
       password: this.syncPassword,
-      remotePath: '/小舟/书签/bookmarks.json',
-      noteRemotePath: '/小舟/笔记',
+      remotePath: this.syncRemotePath.trim().length > 0 ? this.syncRemotePath.trim() : '/小舟/bookmarks.json',
+      noteRemotePath: this.syncNoteRemotePath.trim().length > 0 ? this.syncNoteRemotePath.trim() : '/小舟/笔记',
       syncNotesEnabled: true,
       syncImportFullContent: this.syncImportFullContent,
       autoSyncOnLaunch: this.autoSyncOnLaunch,
@@ -4299,15 +4308,6 @@ struct Index {
     return 'error';
   }
 
-  private shouldIgnoreWebError(errorCode: number): boolean {
-    // Common transient/resource errors that usually do not block final page render.
-    return errorCode === -2   // NAME_NOT_RESOLVED (often transient during redirect)
-      || errorCode === -302   // ERR_UNKNOWN_URL_SCHEME / redirect handoff variants
-      || errorCode === -102   // ERR_CONNECTION_REFUSED (often subresource)
-      || errorCode === -101   // ERR_CONNECTION_RESET
-      || errorCode === -104;  // ERR_INTERNET_DISCONNECTED for subrequests
-  }
-
   private connectionStatusColor(): string {
     if (this.connectionStatusType === 'success') {
       return '#0A7E07';
@@ -4337,6 +4337,61 @@ struct Index {
       return '请填写 WebDAV 密码';
     }
     return '';
+  }
+
+  private appendSyncLog(message: string, success: boolean): void {
+    const now = new Date();
+    const hh = `${now.getHours()}`.padStart(2, '0');
+    const mm = `${now.getMinutes()}`.padStart(2, '0');
+    const ss = `${now.getSeconds()}`.padStart(2, '0');
+    const timeLabel = `${hh}:${mm}:${ss}`;
+    const next: SyncLog[] = this.syncLogs.slice();
+    next.unshift({
+      id: `${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      timeLabel: timeLabel,
+      message: message,
+      success: success
+    });
+    if (next.length > 20) {
+      next.length = 20;
+    }
+    this.syncLogs = next;
+    if (!success) {
+      this.lastSyncErrorDetail = message;
+    }
+    this.persistSyncLogs();
+  }
+
+  private loadSyncLogs(): void {
+    if (this.syncLogRepository === null) {
+      return;
+    }
+    this.syncLogRepository.listLogs()
+      .then((items: SyncLog[]) => {
+        this.syncLogs = items.slice(0, 20);
+      })
+      .catch(() => {
+        this.statusText = '读取同步日志失败';
+      });
+  }
+
+  private persistSyncLogs(): void {
+    if (this.syncLogRepository === null) {
+      return;
+    }
+    this.syncLogRepository.saveLogs(this.syncLogs)
+      .catch(() => {
+        this.statusText = '保存同步日志失败';
+      });
+  }
+
+  private shouldIgnoreWebError(errorCode: number): boolean {
+    // Common transient/resource errors that usually do not block final page render.
+    return errorCode === -2   // NAME_NOT_RESOLVED (often transient during redirect)
+      || errorCode === -302   // ERR_UNKNOWN_URL_SCHEME / redirect handoff variants
+      || errorCode === -102   // ERR_CONNECTION_REFUSED (often subresource)
+      || errorCode === -101   // ERR_CONNECTION_RESET
+      || errorCode === -104;  // ERR_INTERNET_DISCONNECTED for subrequests
   }
 
   // 提取URL的origin（协议+域名），用于匹配书签
@@ -4546,52 +4601,6 @@ struct Index {
       const days = Math.floor(diff / day);
       return `${days}天前`;
     }
-  }
-
-  private appendSyncLog(message: string, success: boolean): void {
-    const now = new Date();
-    const hh = `${now.getHours()}`.padStart(2, '0');
-    const mm = `${now.getMinutes()}`.padStart(2, '0');
-    const ss = `${now.getSeconds()}`.padStart(2, '0');
-    const timeLabel = `${hh}:${mm}:${ss}`;
-    const next: SyncLog[] = this.syncLogs.slice();
-    next.unshift({
-      id: `${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-      timeLabel: timeLabel,
-      message: message,
-      success: success
-    });
-    if (next.length > 20) {
-      next.length = 20;
-    }
-    this.syncLogs = next;
-    if (!success) {
-      this.lastSyncErrorDetail = message;
-    }
-    this.persistSyncLogs();
-  }
-
-  private loadSyncLogs(): void {
-    if (this.syncLogRepository === null) {
-      return;
-    }
-    this.syncLogRepository.listLogs()
-      .then((items: SyncLog[]) => {
-        this.syncLogs = items.slice(0, 20);
-      })
-      .catch(() => {
-        this.statusText = '读取同步日志失败';
-      });
-  }
-
-  private persistSyncLogs(): void {
-    if (this.syncLogRepository === null) {
-      return;
-    }
-    this.syncLogRepository.saveLogs(this.syncLogs)
-      .catch(() => {
-        this.statusText = '保存同步日志失败';
-      });
   }
 
   private openNoteListPage(): void {

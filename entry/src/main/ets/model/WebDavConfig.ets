@@ -14,7 +14,7 @@ export const EMPTY_WEB_DAV_CONFIG: WebDavConfig = {
   serverUrl: 'https://dav.jianguoyun.com/dav/',
   username: '',
   password: '',
-  remotePath: '/小舟/书签/bookmarks.json',
+  remotePath: '/小舟/bookmarks.json',
   noteRemotePath: '/小舟/笔记',
   syncNotesEnabled: false,
   syncImportFullContent: false,
